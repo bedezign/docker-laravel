@@ -1,0 +1,14 @@
+{
+    "name": "bedezign/docker-laravel",
+    "description": "Docker related files for laravel projects",
+    "type": "library",
+    "license": "Apache-2.0",
+    "authors": [
+        {
+            "name": "Steve Guns",
+            "email": "Steve@bedezign.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {}
+}
