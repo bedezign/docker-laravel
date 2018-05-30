@@ -1,0 +1,31 @@
+#!/bin/sh
+set -e
+
+role=${CONTAINER_ROLE}
+
+# Taken from https://laravel-news.com/laravel-scheduler-queue-docker
+if [ "$role" = "app" ]; then
+
+    echo "L A R A V E L  A P P L I C A T I O N  C O N T A I N E R"
+
+    php-fpm "$@"
+
+elif [ "$role" = "queue" ]; then
+
+    echo "L A R A V E L  Q U E U E  C O N T A I N E R"
+    php artisan queue:work --verbose --tries=3 --timeout=180
+
+elif [ "$role" = "scheduler" ]; then
+
+    echo "L A R A V E L  S C H E D U L E R  C O N T A I N E R"
+    while [ true ]
+    do
+      php artisan schedule:run --verbose --no-interaction &
+      sleep 60
+    done
+
+else
+
+    exec "$@"
+
+fi

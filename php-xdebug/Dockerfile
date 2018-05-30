@@ -10,7 +10,9 @@ RUN apt-get update \
     # Regular extensions
     && docker-php-ext-install zip pdo pdo_mysql \
     # Redis & XDebug
-    && pecl channel-update pecl.php.net && pecl install redis && docker-php-ext-enable redis \
+    && pecl channel-update pecl.php.net && pecl install redis && pecl install xdebug && docker-php-ext-enable redis xdebug \
+    && (echo 'php_admin_flag[xdebug.remote_enable] = On;' >> /usr/local/etc/php-fpm.d/www.conf) \
+    && (echo 'php_admin_flag[xdebug.remote_host] = "docker.for.mac.localhost";' >> /usr/local/etc/php-fpm.d/www.conf) \
     # Make entrypoint executable
     && chmod +x /usr/local/bin/php-entrypoint \
     # Cleanup apt-get stuff
