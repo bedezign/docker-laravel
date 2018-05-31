@@ -13,7 +13,7 @@ RUN apt-get update \
     # Regular extensions
     && docker-php-ext-install zip pdo pdo_mysql \
     #
-    && pecl channel-update pecl.php.net
+    && pecl channel-update pecl.php.net \
     #
     # Redis
     && pecl channel-update pecl.php.net && pecl install redis && docker-php-ext-enable redis \
