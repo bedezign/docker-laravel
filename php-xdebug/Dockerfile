@@ -6,7 +6,7 @@ RUN apt-get update \
     && apt-get install -y zlib1g-dev sudo iputils-ping \
     #
     # LUA
-    && apt-get install -y lua5.3-dev
+    && apt-get install -y lua5.3-dev \
     && cd /usr/include && ln -fs lua5.3/ lua && cd /usr/lib && ln -fs /usr/lib/x86_64-linux-gnu/liblua5.3.so liblua.so \
     && pear config-set http_proxy "$http_proxy" && pear update-channels && pecl install lua && docker-php-ext-enable lua \
     #
