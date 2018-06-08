@@ -1,0 +1,8 @@
+{{/*
+Because of the limitations of go text/template (like not being able to assign a new value to a declared variable and so on)
+it is nearly impossible to do with this what we want.
+For that reason this just generates and (invalid) JSON file and a php parser is used to generate the
+nginx configuration. docker-gen is awesome at determining the containers to process but the templating is very limited,
+so we just leverage what we can
+*/}}
+{{json $}}

@@ -1,0 +1,11 @@
+[Unit]
+Description=Maintain NGINX configuration based on Docker Container meta-data.
+Documentation=https://github.com/jwilder/docker-gen
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+ExecStart=/usr/local/bin/docker-gen -config /etc/docker-gen.d/docker-gen.conf
+
+[Install]
+WantedBy=multi-user.targe
