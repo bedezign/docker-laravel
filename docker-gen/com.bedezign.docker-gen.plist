@@ -10,7 +10,7 @@
 	<array>
 		<string>/usr/local/bin/docker-gen</string>
 		<string>-config</string>
-		<string>/Users/steve/.docker-gen/docker-gen.conf</string>
+		<string>/etc/docker-gen.conf</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>

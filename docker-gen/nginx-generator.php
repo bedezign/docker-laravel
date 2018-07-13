@@ -1,46 +1,13 @@
 <?php
 /**
- * This script is the PHP version of Jason Wilders' docker proxying examples but allows for more finegrained configuration
- *
- * The script also works with Labels instead of Env entries as I don't like to add non-relevant entries there.
- * Command line arguments:
- * - nginx=/sbin/nginx          - location of the nginx binary
- * - file=/tmp/containers.json  - File to read the list of containers from
- * - reload                     - if specified, triggers an nginx reload (script might need to be run is root for this)
- * - delete                     - If specified, delete the json file after we're done
- *
- * Recognized docker-compose service labels:
- * NGINX_HOST
- *  (eg "host.domain.tld") This HAS to be set for the container to be included in the nginx configuration.
- *  It allows us to group things per vhost
- * NGINX_SSL_CERT/NGINX_SSL_KEY
- *  By default the script assumes letsencrypt certificates under /etc/letsencrypt/live/{NGINX_HOST}
- *  (fullchain.pem and privkey.pem respectively). Set these labels in any of the linked containers and they will be valid for all of them
- *  (assumption being that you'll only use the one certificat/key for a specific vhost)
- * NGINX_PROXY
- *  Defines how to setup the proxying. You have control over which ports/protocol will be listened on, the location to use and where
- *  to forward traffic to (both exposed port and protocol). Since this will be used the most, there are a number of ways to configure this,
- *  depending on your preference:
- *  - As a "template" by its name.
- *    There are several templates predefined:
- *      "https": (default) Setup a server on the 443 port that accepts ssl/http2 connections and that forwards them to the exposed port 80 on your
- *               container as HTTP. All appropriate headers are added (including Front-End-Https). A connection upgrade server will be added
- *      "http": Setup a proxy from port 80 public to exposed port 80 on your container
- *      "direct": Forward http traffic from port 80 to container port 80 and 443 https to 443
- *      "merge": Setup separate server entries for both port 80 http and 443 https, but forward them to the same container port
- *              (handy for development if you want to be able to test non-https traffic)
- *  - As a json
- *    If you want total control, you can specify the json configuration (either a single entry or an array).
- *    Recognised attributes are (whatever you don't set gets the default value):
- *      - 'port': Public port on which nginx will listen (default: 443)
- *      - 'protocol': Public listen protocol (default: 'https')
- *      - 'proxy_port': Exposed port on your container. This will be "expanded" into the port on the host if the IP is 0.0.0.0  (default: 80)
- *      - 'proxy_protocol' Protocol to proxy with (default: 'http')
- *      - 'location': Location to define the proxy on (default: '/')
- *
- * Varia:
- *  Just like the scripts this is based on, an existing "/etc/nginx/proxy.conf" will be included automatically as will "/etc/nginx/vhost.d/{NGINX_HOST}"-files
+ * This script is the PHP version of Jason Wilders' docker proxying examples but allows for more fine grained configuration.
+ * See the README.md for more information.
  */
+
+ini_set('display_errors', true);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
+
 $options = getopt('', ['nginx::', 'file::', 'reload::', 'delete']);
 $file    = $options['file'] ?? '/tmp/containers.json';
 $nginx   = $options['nginx'] ?? null;
@@ -49,10 +16,18 @@ $nginx   = $options['nginx'] ?? null;
 // of the involved containers (https://github.com/jwilder/docker-gen)
 $containers = file_get_contents($file);
 $containers = json_decode($containers, true);
-ini_set('display_errors', true);
-ini_set('display_startup_errors', 1);
-error_reporting(E_ALL);
+
 function is_sequential($array) { return array_keys($array) === range(0, \count($array) - 1); }
+
+function json($string)
+{
+    $json = json_decode($string, true);
+    // As a fallback: try to decode with unquoted property names, even though its technically invalid JSON.
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        $json = json_decode(preg_replace("/(['\"])?(\w+)(['\"])?:/", '"$2":', $string), true);
+    }
+    return $json;
+}
 
 function array_get($array, $key, $default = null, $delimiter = '.')
 {
@@ -146,6 +121,7 @@ proxy_set_header Proxy "";
 
 EOT;
 }
+
 // Group containers per VHOST, ignore those that don't have any (starts off with groupByLabel $ "NGINX_HOST" in the template)
 $hosts = [];
 foreach ($containers as $container) {
@@ -155,8 +131,47 @@ foreach ($containers as $container) {
             $hosts[$host] = ['containers' => [], 'ssl' => ['cert' => "/etc/letsencrypt/live/$host/fullchain.pem", 'key' => "/etc/letsencrypt/live/$host/privkey.pem"]];
         }
         $hosts[$host]['containers'][] = $container;
-        $hosts[$host]['ssl']['cert']  = array_get($container, 'Labels.NGINX_SSL_CERT', $hosts[$host]['ssl']['cert']);
-        $hosts[$host]['ssl']['key']   = array_get($container, 'Labels.NGINX_SSL_KEY', $hosts[$host]['ssl']['key']);
+
+        $create = false;
+        if ($ssl = array_get($container, 'Labels.NGINX_SSL')) {
+            $ssl                         = json($ssl);
+            $tmpDir                      = sys_get_temp_dir();
+            $hosts[$host]['ssl']['cert'] = array_get($ssl, 'cert-path', $tmpDir . "/$host.pem");
+            $hosts[$host]['ssl']['key']  = array_get($ssl, 'key-path', $tmpDir . "/$host.key");
+            // Only allow "create" if a NGINX_SSL was specified, we don't want to overwrite the letsencrypt certificates
+            $create = array_get($ssl, 'create', false);
+        }
+
+        if ($create && !file_exists($hosts[$host]['ssl']['cert'])) {
+            // Create a new private key and signing request
+            $privateKey = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'private_key_bits' => 2048, 'curve_name' => 'prime256v1']);
+            $csr        = openssl_csr_new(['commonName' => $host], $privateKey, ['digest_alg' => 'sha384']);
+
+            $caCert = $caKey = null;
+            $ca     = array_get($container, 'Labels.NGINX_SSL_CA');
+            if ($ca) {
+                $ca = json($ca);
+            } else {
+                // If we don't have a separate CA entry, also allow "ca-" prefixed entries from the SSL configuration
+                foreach ($ssl as $key => $value) {
+                    if (strpos($key, 'ca-') === 0) {
+                        if (!$ca) {
+                            $ca = [];
+                        }
+                        $ca[substr($key, 3)] = $value;
+                    }
+                }
+            }
+
+            if ($ca) {
+                $caCert = 'file://' . $ca['cert-path'];
+                $caKey  = ['file://' . $ca['key-path'], array_get($ca, 'password')];
+            }
+
+            $x509 = openssl_csr_sign($csr, $caCert, $caKey, 365, ['digest_alg' => 'sha384']);
+            openssl_x509_export_to_file($x509, $hosts[$host]['ssl']['cert']);
+            openssl_pkey_export_to_file($privateKey, $hosts[$host]['ssl']['key']);
+        }
     }
 }
 
@@ -195,16 +210,14 @@ EOT;
                 break;
 
             default:
-                // As a fallback, allow for a json string and as a courtesy, make sure unquoted property names are quoted, even though its invalid JSON
-                $json = json_decode(preg_replace("/(['\"])?(\w+)(['\"])?:/", '"$2":', $proxyingType), true);
+                $json = json($proxyingType);
                 if ($json) {
                     // Either its an indexed array (don't touch it) or its associative (wrap in an extra layer)
                     if (is_sequential($json)) {
                         // We'll still wrap it in an extra array if the first element is not an array itself,
                         // this means the user just specified the values in order
                         $proxies = is_array(reset($json)) ? $json : [$json];
-                    }
-                    else {
+                    } else {
                         $proxies = [$json];
                     }
                 }
