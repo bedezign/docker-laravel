@@ -31,11 +31,13 @@ Wasted a lot of time to get it to do what I wanted, but ended up having to admit
 
 This folder contains the required setup for the [laravel-echo-server](https://www.npmjs.com/package/laravel-echo-server) npm module. This is a NodeJS Socket.IO server for [Laravel Echo](https://laravel.com/docs/master/broadcasting). The Dockerfile, based on [`node:7-alpine`](https://hub.docker.com/_/node/), can be used to quickly setup echo in your environment. The included config file (`laravel-echo-server.json`) further facilitates that setup.
 
+<a name="contents-nginx"></a>
 ### nginx 
 
 This simply contains a basic `nginx.conf` file for running PHP scripts against `php-fpm`, assuming the container can be reached via `php:9000` within the docker network.
 There is also a Dockerfile, based on [`nginx:latest`](https://hub.docker.com/_/nginx/), that simply integrates this config file.
 
+<a name="contents-php"></a>
 ### php
 
 Dockerfile to build a [`php:7-fpm`](https://hub.docker.com/_/php/) based image that includes extensions lke `zip`, `pdo`, `pdo_mysql`, `redis` and `lua`.
