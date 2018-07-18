@@ -187,8 +187,8 @@ foreach ($containers as $container) {
             }
         }
 
-        if (array_get($sslConfig, 'type') === 'selfsigned' /*&&
-            (!file_exists($sslConfig['certificate']) || array_get($sslConfig, 'force'))*/) {
+        if (array_get($sslConfig, 'type') === 'selfsigned' &&
+            (!file_exists($sslConfig['certificate']) || array_get($sslConfig, 'force'))) {
             $caCert = $caKey = null;
             if ($ca = array_get($container, 'Labels.NGINX_SSL_CA')) {
                 // Consider the SSL config leading

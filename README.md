@@ -247,6 +247,7 @@ There are a number of labels that you can add that influence the generation of t
     * `req_extensions` and `x509_extensions`: Config extensions to load for the CSR and the Signing (both default `usr_cert`, see [OpenSSL Configuration](#openssl) for more).
     * `serial`: Serial number for the certificate, by default this is `microtime(true)`
     * `days`: Valid days (`365`)
+    * `force`: By default no certificate is generated if it exists. By setting `force` to true you can override this behavior. 
 * `NGINX_SSL_CA`: Configuration for signing your certificate with a Certificate Authority. Like `NGINX_SSL` this can contain a `path`, `certificate` and `key` and it should also have a `password` entry. 
 Why use this? It's fairly easy to create a CA and import this into your mac keychain (or in firefox) and mark it as trusted. 
 All certificates signed with this CA will automatically get "a green lock" in your browser, enabling all extra functionality. So it's a good idea to do this. 
@@ -314,7 +315,7 @@ services:
   cron:
     << : *php-container
     environment:
-      - CONTAINER_ROLE=cron
+      - CONTAINER_ROLE=scheduler
 
   nginx:
     image: bedezign/nginx:php-fpm
