@@ -217,12 +217,12 @@ foreach ($containers as $container) {
             if (count($sslCAConfig)) {
                 $caCert = 'file://' . glue_path($sslCAConfig['certificate'], array_get($sslCAConfig, 'path'));
                 $caKey  = ['file://' . glue_path($sslCAConfig['key'], array_get($sslCAConfig, 'path')), array_get($sslCAConfig, 'password')];
-            }
-            else
+            } else {
                 // Self signed.
                 $caKey = $privateKey;
+            }
 
-            $csr        = openssl_csr_new(['commonName' => $host], $privateKey, $config);
+            $csr  = openssl_csr_new(['commonName' => $host], $privateKey, $config);
             $x509 = openssl_csr_sign($csr, $caCert, $caKey, array_get($config, 'days'), $config, array_get($config, 'serial'));
 
             openssl_x509_export_to_file($x509, $sslConfig['certificate']);

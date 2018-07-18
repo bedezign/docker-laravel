@@ -10,6 +10,7 @@ Overview:
 * [Repository Contents](#contents)
 * [System Setup](#setup)
 * [Docker Compose configuration](#configuration)
+* [Production vs Development example](#example)
 
 <a name="contents"></a>
 ## Repository Contents
@@ -19,15 +20,21 @@ the Dockerfile and making it build locally. That usually means you're not obliga
 
 ### docker-gen
 
-The idea is that we run `nginx` on the host system, which acts as a reverse proxy (and an HTTPS endstop) for all docker containers. This allows saves us from messing arund with the certificates in the containers itself and simplifies a lot of things.
+The idea is that we run `nginx` on the host system, which acts as a reverse proxy (and as HTTPS endstop) for all docker containers. This saves us having to mess with certificates in containers and hopefully simplifies a lot of things.
 
 When running everything in docker containers, you usually end up with either a lot of manual configuration, or using port numbers in your browser to test your code. Neither of which I particularly like. So when I discovered Jason Wilders' [docker-gen](https://github.com/jwilder/docker-gen) and its [nginx-proxy](https://github.com/jwilder/nginx-proxy) example, I decided that was the way to go on my Mac.
 
-Wasted a lot of time to get it to do what I wanted, but ended up having to admit defeat with the out-of-the-box setup. The simple fact that you cannot even create a new variable in a Go text/template ruined my efforts. I wanted to create my own variant with PHP. 
+Spent a lot of time trying to get it to do what I wanted, but ended up having to admit defeat with the out-of-the-box setup. 
+The simple fact that you cannot even create a new variable in a Go text/template ruined my efforts as I wanted a lot more functionality. 
+So I just decided to try and create my own variant with PHP. 
 
-#### in depth 
+#### In depth 
 
-`docker-gen` basically monitors all docker events and whenever a container is started or stopped that would be relevant (in our case, with `onlyexposed = true` in the config this means "containers that expose one or more ports"), it triggers the specified `template` (Go text/template format), stores the template output into `dest` and then runs the `notifycmd`. Since Go's text/template was too limited for me, the only thing the template does is to _jsonify_ the received data structure (referenced as `$`) and then triggers the php script, which will actually do all the work.
+`docker-gen` basically monitors all docker events and whenever a container is started or stopped that would be relevant, it triggers the specified `template` (Go text/template format).
+It then stores the template output into `dest` and then runs the `notifycmd`. 
+In the case of the included config (with `onlyexposed = true`) this means "containers that expose one or more ports".
+
+Since Go's text/template was too limited for me, but that is the language it expects, the only thing the template does is to _jsonify_ the received data structure (referenced as `$`) and then triggers the php script, which will actually do all the work.
 
 ### echo
 
@@ -57,24 +64,24 @@ Identical to php, but this also installs and configures [XDebug](https://xdebug.
 <a name="setup"></a>
 ## Setting up
 
-_Note: If setup all configuration assuming an as close to linux setup as possible, meaning using `/etc`, but you can change the `docker-gen.conf` and the `.plist` file to change that. Also, it is assumed that nginx is `/sbin/nginx` _
+_Note:_ All configuration is done as close to linux as possible, meaning using `/etc`. You can edit the `docker-gen.conf` and the `.plist` file to change that. Also, it is assumed that `nginx` is `/sbin/nginx`
 
-[Homebrew](https://brew.sh/) can install both `nginx` and `docker-gen` for you. 
+(Btw: [Homebrew](https://brew.sh/) can install both `nginx` and `docker-gen` for you) 
 
 Copy the `docker-gen.conf`-file to `/etc`, `containers.tmpl` and `nginx-generator.php` go into `/etc/docker-gen.d/`.
 
-Next, we'll start `nginx`. Homebrew provides a service for `nginx` which makes this step really easy, but you'll have to trigger it via `sudo` as well: `sudo brew services start nginx`. If you're not planning on using ports < 1024 this isn't required, but for me it would defeat the purpose entirely.
+Next, we'll start `nginx`. Homebrew provides a service for `nginx` which makes this step really easy, but you'll have run it as root user: `sudo brew services start nginx`. If you're not planning on using ports < 1024 this isn't required, but for me it would defeat the purpose entirely.
 
-Since nginx runs as root, anything interacting with its configuration also requires root, meaning `docker-gen`. 
+Since nginx now runs as root, anything interacting with its configuration also requires root, meaning `docker-gen`. 
 For MacOS, the easiest way is to copy the added `com.bedezign.docker-gen.plist`-file into your `/Library/LaunchDaemons` directory and then use `sudo launchctl load -w /Library/LaunchDaemons/com.bedezign.docker-gen.plist` to activate it. 
 
 (For `systemd`-based OSes, there's `docker-gen.service`, a unit you can use.)
 
 As for system setup, that is all. 
 
-Since the compose setup possibly involves more of the rest of this repostory, it will be explained later on.
+Since the compose setup possibly involves more of the rest of this repository, it will be explained later on.
 
-If you weant to change the behavior, `nginx-generator.php` supports a number of parameters:
+If you want to change the behavior, `nginx-generator.php` supports a number of parameters:
 
 * `--nginx=target`: Specifies the nginx configuration path. Configured as `/etc/nginx/sites-enabled/docker.conf`. If not specified the result will be written to `STDOUT`.
 * `--file=/tmp/containers.json`: If you want to use an alternative container input file, or store it somewhere else.
@@ -91,7 +98,7 @@ Setting up a new project involves a couple steps. First of all we need to make s
 127.0.0.1	fancy-project.test
 ```
 
-There's 1 caveat here: If you are planning to communicate with containers part of another docker-compose project, you'll have to use a "more global" IP to resolve to. 
+There's a possible caveat here: If you are planning to communicate with containers part of another docker-compose project, you'll have to use a "more global" IP to resolve to. 
 
 Imagine:
 
@@ -116,17 +123,16 @@ And then my hosts file becomes:
 
 ### nginx
 
-After that we want to make sure we can actually reach our containers. For that we need to configure our system nginx. The php script will only process containers that define a `NGINX_HOST` **label** (**not** environment!). I like to do the more "messy" stuff in my `.env`-file, this allows me to easier override these things for different environment.
+After that we want to make sure we can actually reach our containers. For that we need to configure our system nginx. The php script will only process containers that define a `NGINX_HOST` **label** (**not** environment!). I like to do the more "messy" stuff in my `.env`-file, this allows for easier overrides things in different environments.
 
 What I usually setup in my `.env` for a docker project:
 
 ```
 PROJECT_URL=fancy-project.test
-NGINX_SSL={}
+NGINX_SSL={"path":"/home/steve/.ssl","type":"self-signed"}
 NGINX_SSL_CA={"path":"/etc/ssl","certificate":"ca.bedezign.pem","key":"ca.bedezign.key","password":"P455W0RD!"}
 APP_URL=https://${PROJECT_URL}
 ```
-
  
 Basically the `APP_URL` is just there to show that you can also use it within the `.env`.
 
@@ -227,8 +233,8 @@ There are a number of labels that you can add that influence the generation of t
         * `proxy_port`: Exposed port on your container. This will be "expanded" into the port on the host if the IP is `0.0.0.0` (default: `80`).
         * `proxy_protocol`: Protocol to proxy with (default: `http`)
         * `location`: Location to define the proxy on (default: `/`)
-* `NGINX_SSL`: (optional) configuration for the SSL part of a vhost (JSON). An empty json object ("{}") as value simply means: use all defaults> 
-    If you don't use SSL, or you are using letsencrypt, you can omit this completely. 
+* `NGINX_SSL`: (optional) configuration for the SSL part of a vhost (JSON). An empty json object ("{}") as value simply means: enable SSL but use default values. 
+    If you don't use SSL you can omit this completely. 
     Recognised options are:
     * `type`: SSL type. Currently 2 types are known: `letsencrypt` (default) and `self-signed`. 
     * `path`: If configured the `key` and `certificate` can be specified relatively. Defaults are `/etc/letsencrypt/live/{NGINX_HOST}/` for Let's Encypt or the system tmp dir for `self-signed`.
@@ -262,3 +268,107 @@ If your OpenSSL config does not have this, mine is as follows
 basicConstraints = CA:FALSE
 keyUsage = nonRepudiation, digitalSignature, keyEncipherment
 ```
+
+<a name="example"></a>
+## Example: Production vs Development with minimal changes
+
+It's pretty easy to use a single system for both production and development with only a couple minor changes.
+ 
+For example: In production I usually use Let's Encrypt certificates while on development I use self signed certificates (with CA).
+For my development PHP container I actually prefer XDebug installed.
+
+Thanks to the magic of multiple docker-compose files this can be easily achieved:
+
+### Production
+
+.env:
+
+```
+COMPOSE_PROJECT_NAME=mysite
+PROJECT_URL=mysite.com
+```
+
+`COMPOSE_PROJECT_NAME` is specified here to avoid docker-compose creating containers name like `20_php_1` (My deployment system deploys in versioned directories,
+so that number would otherwise be used as project name)
+
+docker-compose.yml:
+```
+version: '3.4'
+
+x-php-container: &php-container
+  image: bedezign/php:laravel-fpm
+  volumes:
+    - .:/var/www/html
+
+services:
+  php:
+    << : *php-container
+    environment:
+      - CONTAINER_ROLE=app
+
+  queue:
+    << : *php-container
+    environment:
+      - CONTAINER_ROLE=queue
+
+  cron:
+    << : *php-container
+    environment:
+      - CONTAINER_ROLE=cron
+
+  nginx:
+    image: bedezign/nginx:php-fpm
+    volumes:
+      - .:/var/www/html:ro
+    labels:
+      NGINX_HOST: ${PROJECT_URL}
+      NGINX_SSL: '{}'
+    ports:
+      - 80
+```
+
+Basically this results in a reverse proxy configuration that uses the let's encrypt data from `/etc/letsencrypt/live/mysite.com/` to host [mysite.com](https://mysite.com)
+
+### Development
+
+For development, this is (part of) the `.env` file:
+```
+COMPOSE_PROJECT_NAME=mysite
+COMPOSE_FILE=docker-compose.yml:docker-compose.dev.yml
+PROJECT_URL=mysite.test
+NGINX_SSL={"path":"/home/steve/.ssl","type":"self-signed"}
+NGINX_SSL_CA={"path":"/home/steve/.ssl","certificate":"ca.bedezign.pem","key":"ca.bedezign.key","password":"P455W0RD!"}
+```
+
+docker-compose.dev.yml:
+```
+version: '3.4'
+
+services:
+  php:
+    image: bedezign/php:laravel-fpm-xdebug
+    environment:
+      - PHP_IDE_CONFIG=serverName=mysite.test
+
+  db:
+    image: mysql:5
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${DB_DATABASE:-db}
+      MYSQL_USER: ${DB_USERNAME:-dbuser}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-dbpassword}
+    volumes:
+      - ${PROJECT_MYSQL}:/var/lib/mysql:rw
+    ports:
+      - 3306
+
+  nginx:
+    labels:
+      NGINX_PROXY: merge
+      NGINX_SSL: ${NGINX_SSL}
+      NGINX_SSL_CA: ${NGINX_SSL_CA}
+```
+
+This "delta" file overrides the php container to use the variant that has XDebug installed, adds a DB container (with externally mounted data directory) 
+and creates self-signed certificates for the the "mysite.test". The `merge` proxy policy makes sure that I can use both 
+"http://mysite.test" (direct http to the container) and "https://mysite.test" (terminated HTTPS with HTTP to the container). 
