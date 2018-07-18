@@ -29,6 +29,15 @@ function json($string)
     return $json;
 }
 
+function glue_path($path, $root)
+{
+    if (!$root || strpos($path, DIRECTORY_SEPARATOR) === 0) {
+        return $path;
+    }
+
+    return rtrim($root, '\\/') . DIRECTORY_SEPARATOR . $path;
+}
+
 function array_get($array, $key, $default = null, $delimiter = '.')
 {
     if (!is_array($array) || null === $key) {
@@ -128,50 +137,99 @@ foreach ($containers as $container) {
     $host = array_get($container, 'Labels.NGINX_HOST');
     if ($host) {
         if (!array_key_exists($host, $hosts)) {
-            $hosts[$host] = ['containers' => [], 'ssl' => ['cert' => "/etc/letsencrypt/live/$host/fullchain.pem", 'key' => "/etc/letsencrypt/live/$host/privkey.pem"]];
+            $hosts[$host] = ['containers' => []];
         }
+
         $hosts[$host]['containers'][] = $container;
 
-        $create = false;
+        $sslConfig = $sslCAConfig = [];
         if ($ssl = array_get($container, 'Labels.NGINX_SSL')) {
-            $ssl                         = json($ssl);
-            $tmpDir                      = sys_get_temp_dir();
-            $hosts[$host]['ssl']['cert'] = array_get($ssl, 'cert-path', $tmpDir . "/$host.pem");
-            $hosts[$host]['ssl']['key']  = array_get($ssl, 'key-path', $tmpDir . "/$host.key");
-            // Only allow "create" if a NGINX_SSL was specified, we don't want to overwrite the letsencrypt certificates
-            $create = array_get($ssl, 'create', false);
-        }
+            $ssl  = json($ssl);
+            $type = str_replace(['-', '_'], '', strtolower(array_get($ssl, 'type', 'letsencrypt')));
 
-        if ($create && !file_exists($hosts[$host]['ssl']['cert'])) {
-            // Create a new private key and signing request
-            $privateKey = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'private_key_bits' => 2048, 'curve_name' => 'prime256v1']);
-            $csr        = openssl_csr_new(['commonName' => $host], $privateKey, ['digest_alg' => 'sha384']);
+            switch ($type) {
+                case 'letsencrypt' :
+                    $sslConfig = [
+                        'path'        => "/etc/letsencrypt/live/$host",
+                        'certificate' => 'fullchain.pem',
+                        'key'         => 'privkey.pem',
+                    ];
+                    break;
 
-            $caCert = $caKey = null;
-            $ca     = array_get($container, 'Labels.NGINX_SSL_CA');
-            if ($ca) {
-                $ca = json($ca);
-            } else {
-                // If we don't have a separate CA entry, also allow "ca-" prefixed entries from the SSL configuration
-                foreach ($ssl as $key => $value) {
-                    if (strpos($key, 'ca-') === 0) {
-                        if (!$ca) {
-                            $ca = [];
-                        }
-                        $ca[substr($key, 3)] = $value;
-                    }
+                case 'selfsigned' :
+                    $sslConfig = [
+                        'path'        => sys_get_temp_dir(),
+                        'certificate' => "${host}.crt",
+                        'key'         => "${host}.key",
+                    ];
+                    break;
+            }
+
+            // Overwrite whatever was specified
+            foreach (array_keys($sslConfig) as $key) {
+                $sslConfig[$key] = array_get($ssl, $key, $sslConfig[$key]);
+            }
+            // But keep our corrected type
+            $sslConfig['type'] = $type;
+
+            // Was there a path specified?
+            if (array_get($ssl, 'path', false)) {
+                // Make sure we use it if needed
+                $sslConfig['certificate'] = glue_path($sslConfig['certificate'], $sslConfig['path']);
+                $sslConfig['key']         = glue_path($sslConfig['key'], $sslConfig['path']);
+            }
+
+            // If it contains certificate authority entries, extract those
+            foreach ($ssl as $key => $value) {
+                if (strpos($key, 'ca-') === 0) {
+                    $sslCAConfig[substr($key, 3)] = $value;
                 }
             }
+        }
 
-            if ($ca) {
-                $caCert = 'file://' . $ca['cert-path'];
-                $caKey  = ['file://' . $ca['key-path'], array_get($ca, 'password')];
+        if (array_get($sslConfig, 'type') === 'selfsigned' /*&&
+            (!file_exists($sslConfig['certificate']) || array_get($sslConfig, 'force'))*/) {
+            $caCert = $caKey = null;
+            if ($ca = array_get($container, 'Labels.NGINX_SSL_CA')) {
+                // Consider the SSL config leading
+                $sslCAConfig = array_merge(json($ca), $sslCAConfig);
             }
 
-            $x509 = openssl_csr_sign($csr, $caCert, $caKey, 365, ['digest_alg' => 'sha384']);
-            openssl_x509_export_to_file($x509, $hosts[$host]['ssl']['cert']);
-            openssl_pkey_export_to_file($privateKey, $hosts[$host]['ssl']['key']);
+            $config = [
+                'config'           => '/etc/ssl/openssl.cnf',
+                'private_key_type' => OPENSSL_KEYTYPE_EC,
+                'private_key_bits' => 2048,
+                'curve_name'       => 'prime256v1',
+                'digest_alg'       => 'sha384',
+                'req_extensions'   => 'usr_cert',
+                'x509_extensions'  => 'usr_cert',
+                'serial'           => microtime(true),
+                'days'             => 365
+            ];
+
+            foreach ($config as $key => $value) {
+                $config[$key] = array_get($sslConfig, $key, $value);
+            }
+
+            // Create a new private key and signing request
+            $privateKey = openssl_pkey_new($config);
+
+            if (count($sslCAConfig)) {
+                $caCert = 'file://' . glue_path($sslCAConfig['certificate'], array_get($sslCAConfig, 'path'));
+                $caKey  = ['file://' . glue_path($sslCAConfig['key'], array_get($sslCAConfig, 'path')), array_get($sslCAConfig, 'password')];
+            }
+            else
+                // Self signed.
+                $caKey = $privateKey;
+
+            $csr        = openssl_csr_new(['commonName' => $host], $privateKey, $config);
+            $x509 = openssl_csr_sign($csr, $caCert, $caKey, array_get($config, 'days'), $config, array_get($config, 'serial'));
+
+            openssl_x509_export_to_file($x509, $sslConfig['certificate']);
+            openssl_pkey_export_to_file($privateKey, $sslConfig['key']);
         }
+
+        $hosts[$host]['ssl'] = $sslConfig;
     }
 }
 
@@ -280,7 +338,7 @@ server {
     ssl_session_cache shared:SSL:50m;
     ssl_session_tickets off;
 
-    ssl_certificate {$data['ssl']['cert']};
+    ssl_certificate {$data['ssl']['certificate']};
     ssl_certificate_key {$data['ssl']['key']}; $vhostConfig
                 
     location $location {

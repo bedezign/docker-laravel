@@ -14,6 +14,8 @@ Overview:
 <a name="contents"></a>
 ## Repository Contents
 
+All docker buildables are also available [on docker hub](https://hub.docker.com/r/bedezign/), so the examples use these instead of pointing to 
+the Dockerfile and making it build locally. That usually means you're not obligated to add the repository as a requirement to your project.
 
 ### docker-gen
 
@@ -120,8 +122,8 @@ What I usually setup in my `.env` for a docker project:
 
 ```
 PROJECT_URL=fancy-project.test
-NGINX_SSL={"cert-path":"/tmp/dev/fancy-project.crt","key-path":"/tmp/dev/fancy-project.key","create":true}
-NGINX_SSL_CA={"cert-path":"/etc/ssl/ca.bedezign.pem","key-path":"/etc/ssl/ca.bedezign.key","password":"P455W0RD!"}
+NGINX_SSL={}
+NGINX_SSL_CA={"path":"/etc/ssl","certificate":"ca.bedezign.pem","key":"ca.bedezign.key","password":"P455W0RD!"}
 APP_URL=https://${PROJECT_URL}
 ```
 
@@ -132,8 +134,7 @@ The service in my `docker-compose.yml`:
 
 ```yaml
   nginx:
-    build: vendor/bedezign/docker-laravel/nginx
-    image: nginx-local:latest
+    image: bedezign/nginx:php-fpm
     volumes:
       - .:/var/www/html:ro
     labels:
@@ -164,8 +165,7 @@ Using the `CONTAINER_ROLE` function (described under the php-entrypoint section)
 
 ```yaml
 x-php-container: &php-container
-  build: vendor/bedezign/docker-laravel/php
-  image: php-local:latest
+  image: bedezign/php:laravel-fpm
   volumes:
     - .:/var/www/html
 
@@ -198,7 +198,7 @@ Recent versions of laravel include [fideloper/TrustedProxy](https://github.com/f
 If you need echo, you can do it like so:
 ```yaml
   echo:
-    build: vendor/bedezign/docker-laravel/echo
+    image: bedezign/laravel-echo-server
     working_dir: /usr/src/app
     volumes:
       - vendor/bedezign/docker-laravel/echo:/usr/src/app
@@ -211,33 +211,54 @@ If you need echo, you can do it like so:
 This sets up echo with an external https port of 6001, proxied to local port 80 (non-https, which is what echo likes). 
 
 <a name="nginx-technical"></a>
-#### NGinx Technical
+### NGinx Technical
 
 There are a number of labels that you can add that influence the generation of the host nginx configuration: 
 
 * `NGINX_HOST`: Tells the configurator under which vhost this container is allocated. If this is not present, the container will be ignored.
 * `NGINX_PROXY`: How nginx should proxy connections to your containers. You can either use one of the predefined "templates" or fully define your own:
-	* `NGINX_PROXY=https`: (default) Setup a server on the 443 port that accepts ssl/http2 connections and forwards them to the exposed port 80 on your container as HTTP. All appropriate headers are added (including Front-End-Https). A connection upgrade server will be added (connecting to http will redirect to https).
-	* `NGINX_PROXY=http`: Setup a proxy from port 80 public to exposed port 80 on your container
-	* `NGINX_PROXY=direct`: Forward http traffic from port 80 to container port 80 and 443 https to 443, don't interfere.
-	* `NGINX_PROXY=merge`: Setup separate server entries for both port 80 http and 443 https, but forward them to the same container port (handy for development if you want to be able to test non-https traffic)
-	* Your own JSON, recognized keys are:
-		* `port`: Public port on which nginx will listen (default: `443`)
- 		* `protocol`: Public listen protocol (default: `https`)
-		* `proxy_port`: Exposed port on your container. This will be "expanded" into the port on the host if the IP is `0.0.0.0` (default: `80`).
- 		* `proxy_protocol`: Protocol to proxy with (default: `http`)
- 		* `location`: Location to define the proxy on (default: `/`)
-* `NGINX_SSL`: Optional configuration for the SSL part of a vhost (JSON). If you don't use SSL, or you are using letsencrypt, you can leave this empty. It will look in `/etc/letsencrypt/live/{NGINX_HOST}`. If you want to use self-signed certificates, we have you covered: the script can auto-generate those for you. Like in the example above, recognised entries are:
-	* `cert-path`: Path to the certificate. `/etc/letsencrypt/live/{NGINX_HOST}/fullchain.pem` if empty.
-	* `key-path`: Path to the certificate key. `/etc/letsencrypt/live/{NGINX_HOST}/privkey.pem` if empty.  
-	* `create`: boolean, default: `false`. If true, this will create a self-signed certificate (if there's no existing one yet). Enabling this without specifying `cert-path` and `key-path` will generate the files in the system temporary directory, to avoid overwriting any let's encrypt certificates if accidentally forgotten. You only need to define this one **for one host**, it will use the same configuration on all identical `NGINX_HOST` entries.
-	* `ca-cert-path`, `ca-key-path`, `ca-password`: Entries for `NGINX_SSL_CA` (if you want to keep everything together in a single JSON).
-* `NGINX_SSL_CA`: Configuration for signing your certificate with a Certificate Authority. Like `NGINX_SSL` this can contain a `cert-path`, `key-path` and it should also have a `password` entry. Why use this? It's fairly easy to create a CA and import this into your mac keychain (or in firefox) and mark it as trusted. All certificates signed with this CA will automatically get "a green lock" in your browser, enabling all extra functionality. So it's a good idea to do this. You can specify it separately from the `NGINX_SSL` entry in case you want to load this one from somehwere else, it does need a password after all.
-
-_Why `cert-path` etc and not just `cert`?_
-Even though it's not implemented yet, I considered allowing to add an entire certificate in the configuration directly, so I'm saving those in case that happens.
+    * `NGINX_PROXY=https`: (default) Setup a server on the 443 port that accepts ssl/http2 connections and forwards them to the exposed port 80 on your container as HTTP. All appropriate headers are added (including Front-End-Https). A connection upgrade server will be added (connecting to http will redirect to https).
+    * `NGINX_PROXY=http`: Setup a proxy from port 80 public to exposed port 80 on your container
+    * `NGINX_PROXY=direct`: Forward http traffic from port 80 to container port 80 and 443 https to 443, don't interfere.
+    * `NGINX_PROXY=merge`: Setup separate server entries for both port 80 http and 443 https, but forward them to the same container port (handy for development if you want to be able to test non-https traffic)
+    * Your own JSON, recognized keys are:
+        * `port`: Public port on which nginx will listen (default: `443`)
+        * `protocol`: Public listen protocol (default: `https`)
+        * `proxy_port`: Exposed port on your container. This will be "expanded" into the port on the host if the IP is `0.0.0.0` (default: `80`).
+        * `proxy_protocol`: Protocol to proxy with (default: `http`)
+        * `location`: Location to define the proxy on (default: `/`)
+* `NGINX_SSL`: (optional) configuration for the SSL part of a vhost (JSON). An empty json object ("{}") as value simply means: use all defaults> 
+    If you don't use SSL, or you are using letsencrypt, you can omit this completely. 
+    Recognised options are:
+    * `type`: SSL type. Currently 2 types are known: `letsencrypt` (default) and `self-signed`. 
+    * `path`: If configured the `key` and `certificate` can be specified relatively. Defaults are `/etc/letsencrypt/live/{NGINX_HOST}/` for Let's Encypt or the system tmp dir for `self-signed`.
+        All path entries verify first if they are absolute (start with directory separator) and will not use the path if that is the case.
+    * `certificate`: Name of the certificate file. Default: `fullchain.pem` (Let's Encrypt) or `$NGINX_HOST.crt` (self-signed)
+    * `key`: Name of the key file. Default: `privkey.pem` (Let's Encrypt) or `$NGINX_HOST.key` (self-signed)
+    * `ca-path`, `ca-certificate`, `ca-key` and `ca-password`: Entries for `NGINX_SSL_CA` (if you want to keep everything together in a single JSON).
+    * `config`: Location of the `openssl.cnf` to use. Default: `/etc/ssl/openssl.conf`.
+    * `private_key_type` (`3` - `OPENSSL_KEYTYPE_EC`), `private_key_bits` (`2048`), `curve_name` (`prime256v1`), `digest_alg` (`sha384`),
+    * `req_extensions` and `x509_extensions`: Config extensions to load for the CSR and the Signing (both default `usr_cert`, see [OpenSSL Configuration](#openssl) for more).
+    * `serial`: Serial number for the certificate, by default this is `microtime(true)`
+    * `days`: Valid days (`365`)
+* `NGINX_SSL_CA`: Configuration for signing your certificate with a Certificate Authority. Like `NGINX_SSL` this can contain a `path`, `certificate` and `key` and it should also have a `password` entry. 
+Why use this? It's fairly easy to create a CA and import this into your mac keychain (or in firefox) and mark it as trusted. 
+All certificates signed with this CA will automatically get "a green lock" in your browser, enabling all extra functionality. So it's a good idea to do this. 
+You can specify it separately from the `NGINX_SSL` entry in case you want to load this one from somewhere else, it does need a password after all.
 
 Just like the scripts this is based on, an existing `/etc/nginx/proxy.conf` will be included automatically, as will any `/etc/nginx/vhost.d/{NGINX_HOST}`-files
 
-##### Unquoted JSON
+### Unquoted JSON
 If the decode of a JSON string fails, the generator will attempt to decode again after trying to quote property names that might've been unquoted. While this is invalid JSON, some of you might prefer to ommit the quotes to save some room... I can by no means guarantee that this replacement will result in what you intended, so use at your own risk.
+
+<a name="nginx-technical"></a>
+### OpenSSL Configuration
+A certificate that is to be used in your browser (end entity certificate) is expected to have `basicConstraints = CA:FALSE` or modern browsers like Firefox will just refuse to load it.
+PHPs' default configuration has a `usr_cert` section that defines this (hence the default name). 
+If your OpenSSL config does not have this, mine is as follows
+
+```
+[ usr_cert ]
+basicConstraints = CA:FALSE
+keyUsage = nonRepudiation, digitalSignature, keyEncipherment
+```
