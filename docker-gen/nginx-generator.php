@@ -229,7 +229,9 @@ foreach ($containers as $container) {
             openssl_pkey_export_to_file($privateKey, $sslConfig['key']);
         }
 
-        $hosts[$host]['ssl'] = $sslConfig;
+        if ($sslConfig) {
+            $hosts[$host]['ssl'] = $sslConfig;
+        }
     }
 }
 
