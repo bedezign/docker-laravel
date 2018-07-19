@@ -169,15 +169,12 @@ foreach ($containers as $container) {
             foreach (array_keys($sslConfig) as $key) {
                 $sslConfig[$key] = array_get($ssl, $key, $sslConfig[$key]);
             }
-            // But keep our corrected type
-            $sslConfig['type'] = $type;
 
-            // Was there a path specified?
-            if (array_get($ssl, 'path', false)) {
-                // Make sure we use it if needed
-                $sslConfig['certificate'] = glue_path($sslConfig['certificate'], $sslConfig['path']);
-                $sslConfig['key']         = glue_path($sslConfig['key'], $sslConfig['path']);
-            }
+            // Keep the - possibly slightly modified - type
+            $sslConfig['type']        = $type;
+            // Convert paths to absolute if needed
+            $sslConfig['certificate'] = glue_path($sslConfig['certificate'], $sslConfig['path']);
+            $sslConfig['key']         = glue_path($sslConfig['key'], $sslConfig['path']);
 
             // If it contains certificate authority entries, extract those
             foreach ($ssl as $key => $value) {
