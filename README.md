@@ -236,12 +236,12 @@ There are a number of labels that you can add that influence the generation of t
 * `NGINX_SSL`: (optional) configuration for the SSL part of a vhost (JSON). An empty json object ("{}") as value simply means: enable SSL but use default values. 
     If you don't use SSL you can omit this completely. 
     Recognised options are:
-    * `type`: SSL type. Currently 2 types are known: `letsencrypt` (default) and `self-signed`. 
+    * `type`: SSL type. Currently 3 types are known: `letsencrypt` (default), `self-signed` and `public`. 
     * `path`: If configured the `key` and `certificate` can be specified relatively. Defaults are `/etc/letsencrypt/live/{NGINX_HOST}/` for Let's Encypt or the system tmp dir for `self-signed`.
         All path entries verify first if they are absolute (start with directory separator) and will not use the path if that is the case.
-    * `certificate`: Name of the certificate file. Default: `fullchain.pem` (Let's Encrypt) or `$NGINX_HOST.crt` (self-signed)
-    * `key`: Name of the key file. Default: `privkey.pem` (Let's Encrypt) or `$NGINX_HOST.key` (self-signed)
-    * `ca-path`, `ca-certificate`, `ca-key` and `ca-password`: Entries for `NGINX_SSL_CA` (if you want to keep everything together in a single JSON).
+    * `certificate`: Name of the certificate file. Default: `fullchain.pem` (Let's Encrypt) or `$NGINX_HOST.crt` (self-signed/public)
+    * `key`: Name of the key file. Default: `privkey.pem` (Let's Encrypt) or `$NGINX_HOST.key` (self-signed/public)
+    * `ca-path`, `ca-certificate`, `ca-key` and `ca-password`: Entries for `NGINX_SSL_CA` (if you want to keep everything together in a single JSON, self-signed only).
     * `config`: Location of the `openssl.cnf` to use. Default: `/etc/ssl/openssl.conf`.
     * `private_key_type` (`3` - `OPENSSL_KEYTYPE_EC`), `private_key_bits` (`2048`), `curve_name` (`prime256v1`), `digest_alg` (`sha384`),
     * `req_extensions` and `x509_extensions`: Config extensions to load for the CSR and the Signing (both default `usr_cert`, see [OpenSSL Configuration](#openssl) for more).

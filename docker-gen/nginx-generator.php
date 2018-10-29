@@ -163,6 +163,13 @@ foreach ($containers as $container) {
                         'key'         => "${host}.key",
                     ];
                     break;
+
+                case 'public' :
+                    $sslConfig = [
+                        'certificate' => "${host}.crt",
+                        'key'         => "${host}.key",
+                    ];
+                    break;
             }
 
             // Overwrite whatever was specified
