@@ -180,8 +180,10 @@ foreach ($containers as $container) {
             // Keep the - possibly slightly modified - type
             $sslConfig['type']        = $type;
             // Convert paths to absolute if needed
-            $sslConfig['certificate'] = glue_path($sslConfig['certificate'], $sslConfig['path']);
-            $sslConfig['key']         = glue_path($sslConfig['key'], $sslConfig['path']);
+            if (isset($sslConfig['path'])) {
+                $sslConfig['certificate'] = glue_path($sslConfig['certificate'], $sslConfig['path']);
+                $sslConfig['key']         = glue_path($sslConfig['key'], $sslConfig['path']);
+            }
 
             // If it contains certificate authority entries, extract those
             foreach ($ssl as $key => $value) {
